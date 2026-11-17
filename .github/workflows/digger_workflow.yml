@@ -1,3 +1,4 @@
+
 name: Digger PoC
 
 on:
@@ -8,6 +9,9 @@ on:
       - opened
       - synchronize
       - reopened
+  issue_comment:
+    types:
+      - created
 
 permissions:
   contents: read
@@ -19,6 +23,10 @@ permissions:
 jobs:
   digger:
     name: Terraform Plan via Digger
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, 'digger'))
     runs-on: ubuntu-latest
 
     steps:
@@ -35,29 +43,30 @@ jobs:
       - name: Start AWS Emulator
         run: |
           aws-emulator > /tmp/aws-emulator.log 2>&1 &
-          sleep 10
 
           mkdir -p "$HOME/.aws/emulator/9297"
 
-          for i in $(seq 1 20); do
-            if [ -f "$HOME/.aws/emulator/9297/emulator_credentials" ]; then
+          for i in $(seq 1 30); do
+            if [ -f "$HOME/.aws/emulator/9297/emulator_credentials" ] && \
+               [ -f "$HOME/.aws/emulator/9297/ca.pem" ]; then
               break
             fi
             sleep 2
           done
 
           test -f "$HOME/.aws/emulator/9297/emulator_credentials"
+          test -f "$HOME/.aws/emulator/9297/ca.pem"
 
       - name: Configure Emulator credentials
         run: |
           echo "AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/emulator/9297/emulator_credentials" >> "$GITHUB_ENV"
           echo "AWS_CONFIG_FILE=$HOME/.aws/emulator/9297/config" >> "$GITHUB_ENV"
           echo "AWS_CA_BUNDLE=$HOME/.aws/emulator/9297/ca.pem" >> "$GITHUB_ENV"
-          echo "AWS_ACCESS_KEY_ID=test" >> "$GITHUB_ENV"
-          echo "AWS_SECRET_ACCESS_KEY=test" >> "$GITHUB_ENV"
+          echo "AWS_ENDPOINT_URL=https://127.0.0.1:9297" >> "$GITHUB_ENV"
           echo "AWS_REGION=us-east-1" >> "$GITHUB_ENV"
           echo "AWS_DEFAULT_REGION=us-east-1" >> "$GITHUB_ENV"
           echo "AWS_EC2_METADATA_DISABLED=true" >> "$GITHUB_ENV"
+          echo "AWS_DISABLE_HOST_PREFIX_INJECTION=true" >> "$GITHUB_ENV"
 
       - name: Validate S3 Emulator
         run: |
